@@ -256,6 +256,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help='Refresh interval in seconds (default: 2)')
     parser.add_argument('-o', '--once', action='store_true',
                         help='Show info once and exit')
+    parser.add_argument('-w', '--watch', action='store_true',
+                        help='Continuously watch and refresh output (default behavior)')
 
     args = parser.parse_args(list(argv) if argv is not None else None)
 
@@ -270,6 +272,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         else:
             print("No Bluetooth audio devices found")
         return 0
+
+    if args.interval < 1:
+        print("Interval must be at least 1 second.", file=sys.stderr)
+        return 2
 
     monitor_loop(args.interval)
     return 0

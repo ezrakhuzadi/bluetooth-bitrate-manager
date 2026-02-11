@@ -661,7 +661,6 @@ class BluetoothBitrateWindow(Adw.ApplicationWindow):
         def monitor_loop():
             while self.monitoring:
                 GLib.idle_add(self.update_device_display)
-                GLib.timeout_add_seconds(2, lambda: None)
                 import time
                 time.sleep(2)
 
@@ -928,18 +927,46 @@ index fc55a03..935a4e0 100644
         """Restart PipeWire services"""
         self.log_to_buffer("Restarting PipeWire...\n")
         try:
-            command = _host_command([
-                'systemctl', '--user', 'restart',
-                'pipewire', 'pipewire-pulse', 'wireplumber'
-            ])
-            result = subprocess.run(
-                command,
-                capture_output=True, text=True
-            )
-            if result.returncode == 0:
-                self.log_to_buffer("✓ PipeWire restarted successfully\n")
+            if not _host_has("systemctl"):
+                self.log_to_buffer("✗ systemctl is not available on host; restart audio services manually.\n")
+                return
+
+            units = [
+                "pipewire.service",
+                "pipewire-pulse.service",
+                "wireplumber.service",
+                "pipewire-media-session.service",
+            ]
+            restarted = []
+            failures = []
+
+            for unit in units:
+                show_result = subprocess.run(
+                    _host_command(['systemctl', '--user', 'show', unit]),
+                    capture_output=True,
+                    text=True,
+                )
+                if show_result.returncode != 0:
+                    continue
+
+                restart_result = subprocess.run(
+                    _host_command(['systemctl', '--user', 'restart', unit]),
+                    capture_output=True,
+                    text=True,
+                )
+                if restart_result.returncode == 0:
+                    restarted.append(unit)
+                else:
+                    failures.append((unit, restart_result.stderr or restart_result.stdout))
+
+            if restarted:
+                self.log_to_buffer(f"✓ Restarted: {', '.join(restarted)}\n")
+            elif failures:
+                self.log_to_buffer("✗ Failed to restart PipeWire services:\n")
+                for unit, error in failures:
+                    self.log_to_buffer(f"  {unit}: {error.strip()}\n")
             else:
-                self.log_to_buffer(f"✗ Failed to restart PipeWire: {result.stderr}\n")
+                self.log_to_buffer("✗ No user PipeWire services were detected to restart.\n")
         except Exception as e:
             self.log_to_buffer(f"✗ Error: {e}\n")
 
@@ -947,20 +974,34 @@ index fc55a03..935a4e0 100644
         """Restart Bluetooth daemon"""
         self.log_to_buffer("Restarting Bluetooth service...\n")
         try:
-            # Try system-level bluetooth service first
-            result = run_privileged_command(
-                ["systemctl", "restart", "bluetooth.service"]
-            )
-            if result.returncode != 0 and "Unknown operation" in (result.stderr or ""):
-                # Fall back to legacy bluetoothd restart
-                result = run_privileged_command(["systemctl", "restart", "bluetooth"])
+            commands = []
+            if _host_has("systemctl"):
+                commands.extend([
+                    ["systemctl", "restart", "bluetooth.service"],
+                    ["systemctl", "restart", "bluetoothd.service"],
+                    ["systemctl", "restart", "bluetooth"],
+                ])
+            if _host_has("service"):
+                commands.extend([
+                    ["service", "bluetooth", "restart"],
+                    ["service", "bluetoothd", "restart"],
+                ])
 
-            if result.returncode == 0:
-                self.log_to_buffer("✓ Bluetooth service restarted successfully\n")
-            else:
-                self.log_to_buffer(
-                    f"✗ Failed to restart Bluetooth: {result.stderr or result.stdout}\n"
-                )
+            if not commands:
+                self.log_to_buffer("✗ No supported service manager found (systemctl/service).\n")
+                return
+
+            last_error = ""
+            for command in commands:
+                result = run_privileged_command(command)
+                if result.returncode == 0:
+                    self.log_to_buffer(f"✓ Bluetooth service restarted via: {' '.join(command)}\n")
+                    return
+                last_error = (result.stderr or result.stdout or "").strip()
+
+            self.log_to_buffer(
+                f"✗ Failed to restart Bluetooth using known service commands. Last error: {last_error}\n"
+            )
         except Exception as e:
             self.log_to_buffer(f"✗ Error restarting Bluetooth: {e}\n")
 

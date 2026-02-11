@@ -16,10 +16,18 @@ PIPEWIRE_TAG="${PIPEWIRE_TAG:-}"
 INSTALL_PREFIX="${INSTALL_PREFIX:-}"
 
 run_privileged() {
+  if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
+    "$@"
+    return
+  fi
+
   if command -v pkexec >/dev/null 2>&1; then
     pkexec "$@"
-  else
+  elif command -v sudo >/dev/null 2>&1; then
     sudo "$@"
+  else
+    echo "Need elevated privileges to install patched codec (requires pkexec, sudo, or root)." >&2
+    exit 1
   fi
 }
 
@@ -37,6 +45,8 @@ detect_pipewire_tag() {
     local detected_version
     detected_version="$(pkg-config --modversion libpipewire-0.3 2>/dev/null || true)"
     if [[ -n "$detected_version" ]]; then
+      # Normalize distro version strings (e.g. 1.4.9+r12 -> 1.4.9).
+      detected_version="$(echo "$detected_version" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*$/\1/')"
       echo "$detected_version"
       return
     fi
@@ -48,7 +58,17 @@ detect_pipewire_tag() {
 
 detect_install_prefix() {
   local so_name="libspa-codec-bluez5-sbc.so"
-  local -a candidates=(
+  local -a candidates=()
+
+  if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists libpipewire-0.3; then
+    local pkg_libdir
+    pkg_libdir="$(pkg-config --variable=libdir libpipewire-0.3 2>/dev/null || true)"
+    if [[ -n "$pkg_libdir" ]]; then
+      candidates+=("$pkg_libdir/spa-0.2/bluez5")
+    fi
+  fi
+
+  candidates+=(
     "/usr/lib/spa-0.2/bluez5"
     "/usr/lib64/spa-0.2/bluez5"
     "/usr/local/lib/spa-0.2/bluez5"
@@ -89,6 +109,59 @@ detect_install_prefix() {
   echo "/usr/lib/spa-0.2/bluez5"
 }
 
+ensure_pipewire_tag_available() {
+  local fallback_tag="1.4.9"
+  if [[ -d "$WORKDIR/pipewire/.git" ]] && git -C "$WORKDIR/pipewire" rev-parse -q --verify "$PIPEWIRE_TAG^{commit}" >/dev/null 2>&1; then
+    return
+  fi
+
+  local remote_tags
+  if remote_tags="$(git ls-remote --tags "$PIPEWIRE_GIT" 2>/dev/null)"; then
+    local remote_refs
+    remote_refs="$(echo "$remote_tags" | awk '{print $2}')"
+
+    if echo "$remote_refs" | grep -Fxq "refs/tags/$PIPEWIRE_TAG"; then
+      return
+    fi
+
+    echo "Requested PipeWire tag '$PIPEWIRE_TAG' was not found in upstream tags." >&2
+    if echo "$remote_refs" | grep -Fxq "refs/tags/$fallback_tag"; then
+      echo "Falling back to PipeWire tag '$fallback_tag'." >&2
+      PIPEWIRE_TAG="$fallback_tag"
+      return
+    fi
+
+    echo "Could not find a compatible PipeWire tag automatically. Set PIPEWIRE_TAG manually." >&2
+    exit 1
+  fi
+
+  echo "Could not verify PipeWire tags remotely; continuing with '$PIPEWIRE_TAG'." >&2
+}
+
+restart_audio_stack() {
+  local restarted=0
+
+  if ! command -v systemctl >/dev/null 2>&1; then
+    echo ">>> systemctl not found; restart PipeWire/WirePlumber manually."
+    return 0
+  fi
+
+  # Restart whichever services are actually present in this user session.
+  local unit
+  for unit in pipewire.service pipewire-pulse.service wireplumber.service pipewire-media-session.service; do
+    if systemctl --user show "$unit" >/dev/null 2>&1; then
+      if systemctl --user restart "$unit" >/dev/null 2>&1; then
+        echo ">>> Restarted $unit"
+        restarted=1
+      fi
+    fi
+  done
+
+  if [[ $restarted -eq 0 ]]; then
+    echo ">>> Could not auto-restart user audio services; please relogin or restart PipeWire manually."
+  fi
+}
+
 require_command git
 require_command curl
 require_command meson
@@ -104,6 +177,7 @@ fi
 PIPEWIRE_TAG="${PIPEWIRE_TAG:-$(detect_pipewire_tag)}"
 INSTALL_PREFIX="${INSTALL_PREFIX:-$(detect_install_prefix)}"
 TARGET="$INSTALL_PREFIX/libspa-codec-bluez5-sbc.so"
+ensure_pipewire_tag_available
 
 echo ">>> Using work directory: $WORKDIR"
 echo ">>> Using PipeWire tag: $PIPEWIRE_TAG"
@@ -118,10 +192,26 @@ fi
 
 if [[ ! -d "$WORKDIR/pipewire" ]]; then
   echo ">>> Cloning PipeWire $PIPEWIRE_TAG"
-  git clone --depth 1 --branch "$PIPEWIRE_TAG" "$PIPEWIRE_GIT" "$WORKDIR/pipewire"
+  if ! git clone --depth 1 --branch "$PIPEWIRE_TAG" "$PIPEWIRE_GIT" "$WORKDIR/pipewire"; then
+    if [[ "$PIPEWIRE_TAG" != "1.4.9" ]]; then
+      echo ">>> Clone for $PIPEWIRE_TAG failed, retrying with fallback tag 1.4.9"
+      PIPEWIRE_TAG="1.4.9"
+      rm -rf "$WORKDIR/pipewire"
+      git clone --depth 1 --branch "$PIPEWIRE_TAG" "$PIPEWIRE_GIT" "$WORKDIR/pipewire"
+    else
+      exit 1
+    fi
+  fi
 else
   echo ">>> Reusing existing repo; resetting to $PIPEWIRE_TAG"
-  git -C "$WORKDIR/pipewire" fetch --depth 1 origin "refs/tags/$PIPEWIRE_TAG:refs/tags/$PIPEWIRE_TAG"
+  if ! git -C "$WORKDIR/pipewire" fetch --depth 1 origin "refs/tags/$PIPEWIRE_TAG:refs/tags/$PIPEWIRE_TAG"; then
+    echo ">>> Could not fetch tag $PIPEWIRE_TAG; attempting to use locally cached sources"
+  fi
+  if ! git -C "$WORKDIR/pipewire" rev-parse -q --verify "$PIPEWIRE_TAG^{commit}" >/dev/null 2>&1; then
+    echo "PipeWire tag '$PIPEWIRE_TAG' is not available in local cache." >&2
+    echo "Connect to the internet or set PIPEWIRE_TAG to an existing local tag." >&2
+    exit 1
+  fi
   git -C "$WORKDIR/pipewire" reset --hard "$PIPEWIRE_TAG"
   git -C "$WORKDIR/pipewire" clean -fdx
 fi
@@ -178,11 +268,12 @@ echo ">>> Installing patched libspa-codec-bluez5-sbc.so (requires privileges)"
 run_privileged cp "$OUTPUT_SO" "$TARGET"
 
 echo ">>> Restarting PipeWire stack"
-systemctl --user restart pipewire pipewire-pulse wireplumber
+restart_audio_stack
 
 echo
 echo "Patched module installed. Reconnect your Bluetooth device and check the codec with:"
 echo "  busctl --system get-property org.bluez /org/bluez/hci0/dev_<ADDR>/sep1/fdX org.bluez.MediaTransport1 Configuration"
 echo
 echo "If something breaks, restore the backup with:"
-echo "  sudo cp $BACKUP $TARGET && systemctl --user restart pipewire pipewire-pulse wireplumber"
+echo "  # run as root (e.g. sudo/doas)"
+echo "  cp $BACKUP $TARGET && systemctl --user restart pipewire pipewire-pulse wireplumber"

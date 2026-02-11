@@ -27,8 +27,8 @@ Bluetooth Bitrate Manager is a GTK4/Libadwaita desktop companion and CLI monitor
 - Libadwaita interface auto-refreshes when devices connect, change codec, or negotiate a new bitrate.
 - `bt-bitrate-monitor` CLI prints the same negotiated SBC parameters that the GUI shows, so you can script or SSH into remote machines.
 - One-click "Build and Install High Bitrate Codec" action patches PipeWire's SBC plugin with your chosen bitpool and restores the original file on uninstall.
-- `install.sh` bootstraps system packages for Debian/Ubuntu, Fedora, Arch, openSUSE, and Gentoo before installing the Python package to your user site.
-- MIT licensed and versioned - this repository is ready for packaging and the initial 0.1.0 release.
+- `install.sh` bootstraps system packages across Debian/Ubuntu, Fedora/RHEL, Arch, openSUSE, Alpine, Void, Solus, and Gentoo before installing to your user site.
+- MIT licensed and versioned.
 
 ## Requirements
 - Linux with PipeWire >= 0.3.x and WirePlumber (or another BlueZ-compatible session manager).
@@ -83,13 +83,13 @@ yay -S bluetooth-bitrate-manager
 > helper. It also ships the .desktop launcher and icon.
 
 ### Option 4 - install script (distro packages + user site)
-The repository ships `install.sh`, which requests sudo once, installs missing system dependencies, and performs a user-level pip install:
+The repository ships `install.sh`, which requests elevated privileges (root/sudo/doas), installs missing system dependencies, and performs a user-level pip install:
 
 ```bash
 ./install.sh
 ```
 
-The script keeps the sudo ticket alive during the install and drops a `.desktop` launcher into `~/.local/share/applications/`.
+When `sudo` is used, the script keeps the sudo ticket alive during install. It then drops a `.desktop` launcher into `~/.local/share/applications/`.
 
 After installation the following entry points are available on your PATH:
 - `bluetooth-bitrate-gui` - start the GTK application.
@@ -135,13 +135,14 @@ The script needs elevated privileges; the app detects `pkexec` or `sudo`, caches
 Prefer the CLI? Run the script directly:
 
 ```bash
-sudo bluetooth_bitrate_manager/resources/build_high_bitpool.sh
+# run as root, or with sudo/doas
+bluetooth_bitrate_manager/resources/build_high_bitpool.sh
 ```
 
 ## Troubleshooting
 - **No devices detected:** confirm PipeWire is running and that your Bluetooth headset shows up in `pactl list sinks`.
 - **Missing GTK modules:** install `python3-gi`, `gtk4`, and `libadwaita` packages for your distribution.
-- **SBC builder fails:** make sure build tools (`meson`, `ninja`, `gcc`, `pkg-config`, `curl`, `git`) are installed and that `/usr` is writable with sudo/pkexec.
+- **SBC builder fails:** make sure build tools (`meson`, `ninja`, `gcc`, `pkg-config`, `curl`, `git`) are installed and that `/usr` is writable with elevated privileges.
 - **Ubuntu/Debian SBC builder deps:** install `libdbus-1-dev` and `libglib2.0-dev` in addition to build tools.
 - **Externally managed Python:** if pip refuses to install system-wide, use `pipx`, a virtual environment, or rerun the installer which retries with `--break-system-packages` when available.
 
