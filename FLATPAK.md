@@ -61,6 +61,12 @@ The Flatpak can rebuild SBC codecs, but requires build tools on your **host syst
 sudo pacman -S git meson ninja gcc pkgconf pipewire
 ```
 
+Ubuntu/Debian equivalent:
+
+```bash
+sudo apt-get install -y git meson ninja-build gcc pkg-config curl libdbus-1-dev libglib2.0-dev
+```
+
 The build script will run on your actual system (outside the sandbox) when you click "Build and Install High Bitrate Codec" in the app.
 
 ## Permissions

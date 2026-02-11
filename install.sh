@@ -83,13 +83,14 @@ case "$PKG_MANAGER" in
   apt)
     install_packages apt \
       python3 python3-pip python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 \
-      pipewire wireplumber meson ninja-build gcc pkg-config curl git
+      pipewire wireplumber meson ninja-build gcc pkg-config curl git \
+      libdbus-1-dev libglib2.0-dev
     ;;
   dnf)
     install_packages dnf \
       python3 python3-pip python3-gobject gtk4 libadwaita \
       pipewire pipewire-alsa pipewire-pulseaudio wireplumber \
-      meson ninja-build gcc make pkgconf curl git
+      meson ninja-build gcc make pkgconf curl git dbus-devel glib2-devel
     ;;
   pacman)
     install_packages pacman \
@@ -99,7 +100,7 @@ case "$PKG_MANAGER" in
   zypper)
     install_packages zypper \
       python311 python311-pip python311-gobject gtk4 libadwaita \
-      pipewire wireplumber meson ninja gcc pkg-config curl git
+      pipewire wireplumber meson ninja gcc pkg-config curl git dbus-1-devel glib2-devel
     ;;
   emerge)
     install_packages emerge \

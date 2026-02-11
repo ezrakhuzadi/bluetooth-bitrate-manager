@@ -123,6 +123,12 @@ From the GUI choose **Build and Install High Bitrate Codec**. The app runs `blue
 1. Clones PipeWire at the host's current version.
 2. Generates a SBC patch with your requested bitpool.
 3. Builds `libspa-codec-bluez5-sbc.so` and installs it system-wide, backing up the stock binary alongside it.
+4. Detects distro-specific install paths (including multiarch paths like `/usr/lib/aarch64-linux-gnu/spa-0.2/bluez5`).
+
+How this interacts with desktop SBC-XQ options:
+- Your desktop/WirePlumber still negotiates which codec is used (SBC vs SBC-XQ).
+- The patch only changes SBC-XQ dual-channel bitpool defaults when SBC-XQ is already negotiated.
+- If the active codec is plain SBC, this patch does not force a switch to SBC-XQ.
 
 The script needs elevated privileges; the app detects `pkexec` or `sudo`, caches credentials, and keeps them alive for long builds. You can revert to the backed-up plugin at any time from the same dialog.
 
@@ -136,6 +142,7 @@ sudo bluetooth_bitrate_manager/resources/build_high_bitpool.sh
 - **No devices detected:** confirm PipeWire is running and that your Bluetooth headset shows up in `pactl list sinks`.
 - **Missing GTK modules:** install `python3-gi`, `gtk4`, and `libadwaita` packages for your distribution.
 - **SBC builder fails:** make sure build tools (`meson`, `ninja`, `gcc`, `pkg-config`, `curl`, `git`) are installed and that `/usr` is writable with sudo/pkexec.
+- **Ubuntu/Debian SBC builder deps:** install `libdbus-1-dev` and `libglib2.0-dev` in addition to build tools.
 - **Externally managed Python:** if pip refuses to install system-wide, use `pipx`, a virtual environment, or rerun the installer which retries with `--break-system-packages` when available.
 
 ## Development

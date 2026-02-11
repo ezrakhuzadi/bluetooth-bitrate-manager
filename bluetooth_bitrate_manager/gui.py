@@ -422,7 +422,8 @@ class BluetoothBitrateWindow(Adw.ApplicationWindow):
         # Description
         desc = Gtk.Label()
         desc.set_text("Enable SBC-XQ with high bitpool settings for better audio quality.\n"
-                     "This will build and install a patched PipeWire codec library.")
+                     "This will build and install a patched PipeWire codec library.\n"
+                     "It does not force codec selection; your system still negotiates SBC/SBC-XQ.")
         desc.set_wrap(True)
         desc.set_halign(Gtk.Align.START)
         config_box.append(desc)
@@ -879,23 +880,10 @@ index fc55a03..935a4e0 100644
                     # Make script executable
                     host_build_script.chmod(0o755)
 
-                    # Execute on host using flatpak-spawn with env variable
-                    # Must use --env to pass environment variables to host
-                    # Expose Flatpak's build tools to host via --forward-fd and path mounting
-                    flatpak_app_path = f"/var/lib/flatpak/app/com.github.ezrakhuzadi.BluetoothBitrateManager/current/active/files/bin"
-                    user_flatpak_path = os.path.expanduser(f"~/.local/share/flatpak/app/com.github.ezrakhuzadi.BluetoothBitrateManager/current/active/files/bin")
-                    user_flatpak_python = os.path.expanduser(f"~/.local/share/flatpak/app/com.github.ezrakhuzadi.BluetoothBitrateManager/current/active/files/lib/python3.12/site-packages")
-                    flatpak_python_path = f"/var/lib/flatpak/app/com.github.ezrakhuzadi.BluetoothBitrateManager/current/active/files/lib/python3.12/site-packages"
-                    # Include git's libexec directory for git-remote-https and other helpers
-                    host_path = f"{user_flatpak_path}:{flatpak_app_path}:/app/bin:/usr/bin:/bin"
-                    python_path = f"{user_flatpak_python}:{flatpak_python_path}:/app/lib/python3.12/site-packages"
-                    git_exec_path = "/usr/lib/git-core"
+                    # Execute on host with host PATH/toolchain. Only pass PATCH_FILE.
                     command = [
                         'flatpak-spawn', '--host',
                         '--env=PATCH_FILE=' + str(host_patch),
-                        '--env=PATH=' + host_path,
-                        '--env=PYTHONPATH=' + python_path,
-                        '--env=GIT_EXEC_PATH=' + git_exec_path,
                         'bash', str(host_build_script)
                     ]
 
